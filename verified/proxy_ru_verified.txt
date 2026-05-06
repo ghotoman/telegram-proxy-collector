@@ -1,7 +1,7 @@
 # Verified RU Proxies (4)
-# Updated: 2026-05-06 05:50:03 UTC
+# Updated: 2026-05-06 08:10:52 UTC
 # Method: TCP_OK
-# Best ping: 0.128s
+# Best ping: 0.16s
 
 tg://proxy?server=proxyfsociety.mooo.com&port=443&secret=eeec5071a832c00b83ea970629d08ef2fe706574726f766963682e7275
 tg://proxy?server=now.tproxyru.click&port=8980&secret=ee104462821249bd7ac519130220c25d09617669746f2e7275
