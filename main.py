@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import sys
 import requests
 import re
 import socket
@@ -18,6 +19,7 @@ from pathlib import Path
 try:
     from telethon import TelegramClient
     from telethon.errors import FloodWaitError
+    from telethon.network.connection import ConnectionTcpMTProxyRandomizedIntermediate
     TELETHON_AVAILABLE = True
 except ImportError:
     TELETHON_AVAILABLE = False
@@ -27,7 +29,7 @@ except ImportError:
 API_ID   = os.environ.get("MTPROXY_API_ID")
 API_HASH = os.environ.get("MTPROXY_API_HASH")
 
-# Внешние источники (обычные ссылки)
+# Внешние источники
 SOURCES = [
     "https://raw.githubusercontent.com/SoliSpirit/mtproto/master/all_proxies.txt",
     "https://raw.githubusercontent.com/Grim1313/mtproto-for-telegram/refs/heads/master/all_proxies.txt",
@@ -50,6 +52,47 @@ BLOCKED = [
     'instagram', 'facebook', 'twitter', 'bbc',
     'meduza', 'linkedin', 'torproject',
 ]
+
+# ─────────────────────────── DPI DETECTOR ───────────────────────
+# Скачай DPI Detector v3.3.0 и положи main.py сюда:
+DPI_PATH = Path("lib/dpi-detector/main.py")
+
+async def dpi_check(proxy_host: str, proxy_port: int) -> bool:
+    """
+    Запускает DPI Detector поверх прокси (тест TCP 16-20 KB).
+    Возвращает True, если DPI-блокировки не обнаружено.
+    Если DPI Detector не установлен — пропускает проверку (возвращает True).
+    """
+    if not DPI_PATH.exists():
+        return True  # DPI Detector не установлен — не блокируем прокси
+
+    proxy_uri = f"socks5://{proxy_host}:{proxy_port}"
+    cmd = [
+        sys.executable, str(DPI_PATH),
+        "-t", "4",          # Тест 4: TCP 16-20 KB
+        "-p", proxy_uri,
+        "--batch",
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+        text = stdout.decode(errors="replace").lower()
+        # Если в выводе есть строка теста и символ провала — блокировка есть
+        if "tcp 16-20kb" in text and "×" in text:
+            return False
+        return True
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        return True  # таймаут — не отбрасываем прокси
+    except Exception:
+        return True  # любая ошибка запуска — пропускаем DPI-тест
 
 # ─────────────────────────── helpers ────────────────────────────
 
@@ -97,7 +140,6 @@ def _prepare_secret(secret_str: str) -> bytes:
 def get_proxies_from_text(text: str) -> set[tuple]:
     proxies: set[tuple] = set()
 
-    # tg://proxy?server=...&port=...&secret=...
     tg_pattern = re.compile(
         r'tg://proxy\?server=([^\s&]+)&port=(\d+)&secret=([A-Za-z0-9_=+/%-]+)',
         re.IGNORECASE,
@@ -106,7 +148,6 @@ def get_proxies_from_text(text: str) -> set[tuple]:
         if _valid_port(p):
             proxies.add((h, int(p), s))
 
-    # https://t.me/proxy?server=...&port=...&secret=...
     tme_pattern = re.compile(
         r't\.me/proxy\?server=([^\s&]+)&port=(\d+)&secret=([A-Za-z0-9_=+/%-]+)',
         re.IGNORECASE,
@@ -115,7 +156,6 @@ def get_proxies_from_text(text: str) -> set[tuple]:
         if _valid_port(p):
             proxies.add((h, int(p), s))
 
-    # host:port:secret (hex, минимум 16 символов)
     simple_pattern = re.compile(
         r'([A-Za-z0-9\.-]+):(\d+):([A-Fa-f0-9]{16,})'
     )
@@ -123,7 +163,6 @@ def get_proxies_from_text(text: str) -> set[tuple]:
         if _valid_port(p):
             proxies.add((h, int(p), s))
 
-    # JSON
     txt = text.strip()
     if txt.startswith('[') or txt.startswith('{'):
         try:
@@ -182,7 +221,6 @@ async def fetch_proxies_from_channel(channel_username: str, limit: int = 50) -> 
     client = TelegramClient('channel_reader_session', API_ID, API_HASH)
     try:
         await client.start()
-        # Убираем @ если есть
         entity = channel_username.lstrip('@')
         channel = await client.get_entity(entity)
         print(f"📡 Читаем канал @{entity} (последние {limit} сообщений)...")
@@ -199,11 +237,10 @@ async def fetch_proxies_from_channel(channel_username: str, limit: int = 50) -> 
         print(f"  ✗ Ошибка чтения канала: {e}")
     finally:
         await client.disconnect()
-        # чистим сессию
         for f in Path('.').glob('channel_reader_session*'):
             try:
                 f.unlink()
-            except:
+            except Exception:
                 pass
     return proxies
 
@@ -316,6 +353,12 @@ async def main_async(args: argparse.Namespace) -> None:
     print('🚀 MTProto Proxy Collector v2.3 (с поддержкой Telegram-канала)')
     print('=' * 48)
 
+    # Предупреждение, если DPI Detector не найден
+    if not DPI_PATH.exists():
+        print(f'⚠️  DPI Detector не найден ({DPI_PATH}) — DPI-проверка отключена')
+    else:
+        print(f'🛡️  DPI Detector найден: {DPI_PATH}')
+
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
@@ -357,13 +400,23 @@ async def main_async(args: argparse.Namespace) -> None:
 
     use_telethon = TELETHON_AVAILABLE and API_ID and API_HASH
     if use_telethon:
-        print('🔥 Режим: Telethon MTProto (полная проверка)\n')
+        dpi_enabled = DPI_PATH.exists()
+        mode_label  = 'Telethon MTProto + DPI' if dpi_enabled else 'Telethon MTProto'
+        print(f'🔥 Режим: {mode_label} (полная проверка)\n')
         semaphore = asyncio.Semaphore(args.workers)
 
         async def check_with_semaphore(p: tuple) -> dict | None:
             async with semaphore:
                 try:
-                    return await check_proxy_telethon(p, timeout_sec=args.timeout)
+                    result = await check_proxy_telethon(p, timeout_sec=args.timeout)
+                    if result is None:
+                        return None
+                    # DPI-проверка только если детектор установлен
+                    if dpi_enabled:
+                        dpi_ok = await dpi_check(result['host'], result['port'])
+                        if not dpi_ok:
+                            return None
+                    return result
                 except Exception:
                     return None
 
@@ -401,12 +454,11 @@ async def main_async(args: argparse.Namespace) -> None:
     ru    = sorted([x for x in valid if x['region'] == 'ru'], key=lambda x: x['ping'])
     eu    = sorted([x for x in valid if x['region'] == 'eu'], key=lambda x: x['ping'])
 
-    top_n = args.top if args.top > 0 else None
+    top_n   = args.top if args.top > 0 else None
     utc_now = datetime.now(timezone.utc)
 
     print(f'\n💾 Сохранение в {output_dir}/...')
 
-    # Сохраняем все варианты
     region_files = {
         f'{output_dir}/proxy_ru_verified.txt':  ru,
         f'{output_dir}/proxy_eu_verified.txt':  eu,
@@ -423,14 +475,12 @@ async def main_async(args: argparse.Namespace) -> None:
                 f.write(f'# Best ping: {chunk[0]["ping"]}s\n')
             f.write('\n' + '\n'.join(x['link'] for x in chunk))
 
-    # t.me формат
     with open(f'{output_dir}/proxy_all_tme_verified.txt', 'w', encoding='utf-8') as f:
         f.write(f'# Verified Proxies t.me format ({len(valid[:top_n])})\n')
         f.write(f'# Updated: {utc_now.strftime("%Y-%m-%d %H:%M:%S UTC")}\n\n')
         for x in valid[:top_n]:
             f.write(make_tme_link(x['host'], x['port'], x['secret']) + '\n')
 
-    # чистые ссылки
     with open(f'{output_dir}/proxy_links_clean.txt', 'w', encoding='utf-8') as f:
         for x in valid[:top_n]:
             f.write(x['link'] + '\n')
@@ -439,7 +489,6 @@ async def main_async(args: argparse.Namespace) -> None:
         for x in valid[:top_n]:
             f.write(make_tme_link(x['host'], x['port'], x['secret']) + '\n')
 
-    # JSON
     with open(f'{output_dir}/proxy_all_verified.json', 'w', encoding='utf-8') as f:
         json.dump(valid[:top_n], f, indent=2, ensure_ascii=False)
 
@@ -451,6 +500,7 @@ async def main_async(args: argparse.Namespace) -> None:
         'ru_count':        len(ru),
         'eu_count':        len(eu),
         'telethon_used':   use_telethon,
+        'dpi_check_used':  DPI_PATH.exists(),
         'best_ru_ping':    ru[0]['ping'] if ru else None,
         'best_eu_ping':    eu[0]['ping'] if eu else None,
         'execution_time':  elapsed,
@@ -472,15 +522,15 @@ async def main_async(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description='🚀 MTProto Proxy Collector v2.3')
-    parser.add_argument('--timeout',      type=float, default=2.0,      help='Таймаут (сек)')
-    parser.add_argument('--workers',      type=int,   default=100,      help='Количество одновременных проверок')
-    parser.add_argument('--top',          type=int,   default=0,        help='Сохранить TOP N быстрейших (0 = все)')
-    parser.add_argument('--output-dir',   type=str,   default='verified', help='Папка для результатов')
-    parser.add_argument('--manual',       type=str,                     help='Локальный файл с прокси (manual.txt)')
-    parser.add_argument('--channel',      type=str,                     help='Telegram канал (например, JustMTProxy)')
-    parser.add_argument('--channel-limit',type=int,   default=50,       help='Сколько последних сообщений проверить в канале')
-    parser.add_argument('--api-id',       type=int,                     help='API ID для Telethon')
-    parser.add_argument('--api-hash',     type=str,                     help='API Hash для Telethon')
+    parser.add_argument('--timeout',       type=float, default=2.0,      help='Таймаут (сек)')
+    parser.add_argument('--workers',       type=int,   default=100,      help='Количество одновременных проверок')
+    parser.add_argument('--top',           type=int,   default=0,        help='Сохранить TOP N быстрейших (0 = все)')
+    parser.add_argument('--output-dir',    type=str,   default='verified', help='Папка для результатов')
+    parser.add_argument('--manual',        type=str,                     help='Локальный файл с прокси (manual.txt)')
+    parser.add_argument('--channel',       type=str,                     help='Telegram канал (например, JustMTProxy)')
+    parser.add_argument('--channel-limit', type=int,   default=50,       help='Сколько последних сообщений проверить в канале')
+    parser.add_argument('--api-id',        type=int,                     help='API ID для Telethon')
+    parser.add_argument('--api-hash',      type=str,                     help='API Hash для Telethon')
     args = parser.parse_args()
 
     if TELETHON_AVAILABLE and (args.api_id is None or args.api_hash is None) and (API_ID is None or API_HASH is None):
@@ -490,4 +540,3 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
-
