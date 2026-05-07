@@ -17,7 +17,6 @@
 | **[Proxy-Telegram-Android](https://github.com/ComradeBingo/Proxy-Telegram-Android)** | Приложение для парсинга прокси для Telegram на Android с проверкой доступности и пинга серверов. | [ComradeBingo](https://github.com/ComradeBingo)  [github](https://github.com/ComradeBingo/Proxy-Telegram-Android)
 | **[Proxy-telegram-windows](https://github.com/ComradeBingo/Proxy-telegram-windows)** | Парсер прокси серверов для Telegram на Windows. Обновлено до версии 1.2: переработан GUI, добавлено меню справки. | [ComradeBingo](https://github.com/ComradeBingo)  [github](https://github.com/ComradeBingo/Proxy-telegram-windows/releases) |
 
-**Маленько перелопатил названия реп и ридми, чтобы проще находилось.**
 
 ***
 
