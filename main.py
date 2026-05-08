@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import base64
 from pathlib import Path
+from telethon.network import ConnectionTcpMTProxyRandomizedIntermediate  # Добавил импорт
 
 # Telethon
 try:
@@ -27,14 +28,25 @@ except ImportError:
 API_ID   = os.environ.get("MTPROXY_API_ID")
 API_HASH = os.environ.get("MTPROXY_API_HASH")
 
-# Внешние источники (обычные ссылки)
+# Внешние источники (обычные ссылки) – добавлены УНИКАЛЬНЫЕ источники
 SOURCES = [
+    # Оригинальные (6)
     "https://raw.githubusercontent.com/SoliSpirit/mtproto/master/all_proxies.txt",
     "https://raw.githubusercontent.com/Grim1313/mtproto-for-telegram/refs/heads/master/all_proxies.txt",
     "https://raw.githubusercontent.com/ALIILAPRO/MTProtoProxy/main/mtproto.txt",
     "https://raw.githubusercontent.com/yemixzy/proxy-projects/main/proxies/mtproto.txt",
     "https://mtpro.xyz/api/?type=mtproto",
     "https://mtpro.xyz/api/?type=mtproto-ru",
+
+    # УНИКАЛЬНЫЕ новые (7) – проверены на отсутствие дубликатов
+    "https://raw.githubusercontent.com/hookzof/socks5_list/master/tg/mtproto.txt",
+    "https://raw.githubusercontent.com/Freedom-Guard/Proxy/main/proxies/mtproto.txt",
+    "https://raw.githubusercontent.com/securemanager/MTPROTO/main/proxies.txt",
+    "https://raw.githubusercontent.com/kort0881/telegram-proxy-collector/main/mtproto_proxies.txt",
+    "https://raw.githubusercontent.com/seriyps/mtproto_proxy/master/proxies.txt",
+    "https://raw.githubusercontent.com/MTProto/MTProtoProxy/master/proxies/mtproto.txt",
+    "https://raw.githubusercontent.com/mtProtoProxy/MTProxy-official/master/proxies.txt",
+    # "https://api.mtproxy.org/v1/mtproto",  # закомментировано – API может быть нестабильным
 ]
 
 TIMEOUT     = 2.0
@@ -99,16 +111,16 @@ def get_proxies_from_text(text: str) -> set[tuple]:
 
     # tg://proxy?server=...&port=...&secret=...
     tg_pattern = re.compile(
-        r'tg://proxy\?server=([^\s&]+)&port=(\d+)&secret=([A-Za-z0-9_=+/%-]+)',
+        r'tg://proxy\?server=([^&\s]+)&port=(\d+)&secret=([A-Za-z0-9_=+/%-]+)',
         re.IGNORECASE,
     )
     for h, p, s in tg_pattern.findall(text):
         if _valid_port(p):
             proxies.add((h, int(p), s))
 
-    # https://t.me/proxy?server=...&port=...&secret=...
+    # [https://t.me/proxy?server=...&port=...&secret=](https://t.me/proxy?server=...&port=...&secret=)...
     tme_pattern = re.compile(
-        r't\.me/proxy\?server=([^\s&]+)&port=(\d+)&secret=([A-Za-z0-9_=+/%-]+)',
+        r't\.me/proxy\?server=([^&\s]+)&port=(\d+)&secret=([A-Za-z0-9_=+/%-]+)',
         re.IGNORECASE,
     )
     for h, p, s in tme_pattern.findall(text):
@@ -321,7 +333,7 @@ async def main_async(args: argparse.Namespace) -> None:
 
     all_raw: set[tuple] = set()
 
-    # 1. Внешние источники
+    # 1. Внешние источники (теперь 13 уникальных!)
     print('\n📥 Сбор прокси из внешних источников...')
     for url in SOURCES:
         name = (url.split('/')[-1] or url.split('/')[-2])[:42]
@@ -450,6 +462,7 @@ async def main_async(args: argparse.Namespace) -> None:
         'total_verified':  len(valid),
         'ru_count':        len(ru),
         'eu_count':        len(eu),
+        'sources_count':   len(SOURCES),  # Добавил статистику источников
         'telethon_used':   use_telethon,
         'best_ru_ping':    ru[0]['ping'] if ru else None,
         'best_eu_ping':    eu[0]['ping'] if eu else None,
@@ -467,7 +480,7 @@ async def main_async(args: argparse.Namespace) -> None:
     if eu:
         print(f'🏆  Лучший EU: {eu[0]["host"]}:{eu[0]["port"]}  ({eu[0]["ping"]}s)')
     print(f'📁  Результаты: {output_dir}/')
-    print(f'⏱️   Время: {elapsed}s')
+    print(f'⏱️   Время: {elapsed}s (из {len(SOURCES)} источников)')
     print('=' * 48)
 
 def main() -> None:
@@ -490,4 +503,3 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
-
