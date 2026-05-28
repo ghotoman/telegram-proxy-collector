@@ -1,8 +1,8 @@
 # Verified RU Proxies (3)
-# Updated: 2026-05-28 10:47:23 UTC
+# Updated: 2026-05-28 14:31:37 UTC
 # Method: TCP_OK
-# Best ping: 0.122s
+# Best ping: 0.125s
 
-tg://proxy?server=dr4.dedus.pro&port=443&secret=eeaf504aa56469ec880c9cb00515fc8a2d79616e6465782e7275
 tg://proxy?server=80.96.112.222&port=443&secret=ee2e7fcf4666472ebd58e4fea75357105f7777772e79616e6465782e7275
+tg://proxy?server=dr4.dedus.pro&port=443&secret=eeaf504aa56469ec880c9cb00515fc8a2d79616e6465782e7275
 tg://proxy?server=dr1.dedus.pro&port=443&secret=eeaf504aa56469ec880c9cb00515fc8a2d79616e6465782e7275
