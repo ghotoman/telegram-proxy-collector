@@ -1,17 +1,13 @@
-# Python
 __pycache__/
 *.py[cod]
-*$py.class
 *.so
-
-# IDE
+test_*
+channel_reader_session*
+*.session
 .vscode/
 .idea/
-
-# OS
 .DS_Store
 Thumbs.db
-
 dpi_detector.spec
 build/
 dist/
