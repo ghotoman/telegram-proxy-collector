@@ -2,30 +2,39 @@ name: Update Verified Proxy Lists
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    # Каждые 4 часа (синхронизировано с README).
+    - cron: '0 */4 * * *'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   collect:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    - run: pip install requests telethon
-    - run: python main.py --top 200
-      env:
-        MTPROXY_API_ID: ${{ secrets.MTPROXY_API_ID }}
-        MTPROXY_API_HASH: ${{ secrets.MTPROXY_API_HASH }}
-    - run: |
-        cp verified/proxy_ru_verified.txt proxy_ru.txt
-        cp verified/proxy_eu_verified.txt proxy_eu.txt
-        cp verified/proxy_all_verified.txt proxy_all.txt
-        cp verified/socks5_proxies.txt socks5.txt || true
-    - run: |
-        git config user.name "Proxy Bot"
-        git config user.email "bot@github.com"
-        git add verified/ proxy_ru.txt proxy_eu.txt proxy_all.txt socks5.txt || true
-        git diff --staged --quiet || git commit -m "🔥 Verified proxies $(date)"
-        git push || true
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Collect proxies
+        run: python main.py --top 200
+        env:
+          MTPROXY_API_ID: ${{ secrets.MTPROXY_API_ID }}
+          MTPROXY_API_HASH: ${{ secrets.MTPROXY_API_HASH }}
+
+      # main.py уже пишет корневые proxy_*.txt и socks5.txt напрямую,
+      # поэтому копирование из verified/ больше не нужно.
+
+      - name: Commit & push
+        run: |
+          git config user.name  "Proxy Bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add verified/ proxy_ru.txt proxy_eu.txt proxy_all.txt socks5.txt
+          git diff --staged --quiet || git commit -m "🔥 Verified proxies $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
